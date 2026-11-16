@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-creation"
+version = "1.0.4"
+description = "创造 ComfyUI 插件：API、文本扩写、图像生成和视频生成。"
+authors = [{ name = "Wuji" }]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["aiohttp", "pillow", "numpy", "requests"]
+
+[tool.comfy]
+PublisherId = "wuji"
+DisplayName = "创造"
+Icon = ""

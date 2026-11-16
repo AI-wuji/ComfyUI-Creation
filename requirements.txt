@@ -1,0 +1,5 @@
+# 均为 ComfyUI 自带依赖，通常无需额外安装
+aiohttp
+pillow
+numpy
+requests

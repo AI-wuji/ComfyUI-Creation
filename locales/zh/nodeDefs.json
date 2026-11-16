@@ -1,0 +1,313 @@
+{
+  "CreationAPI": {
+    "display_name": "创造API",
+    "inputs": {
+      "meta_instruction": {
+        "name": "元指令"
+      },
+      "prompt": {
+        "name": "提示词"
+      },
+      "images": {
+        "name": "图像输入"
+      },
+      "videos": {
+        "name": "视频输入"
+      },
+      "audios": {
+        "name": "音频输入"
+      },
+      "image_role_mode": {
+        "name": "图像作用"
+      },
+      "aspect_ratio": {
+        "name": "画面比例"
+      },
+      "resolution": {
+        "name": "分辨率"
+      },
+      "duration": {
+        "name": "时长（秒）"
+      },
+      "seed": {
+        "name": "随机种子"
+      },
+      "temperature": {
+        "name": "温度覆盖"
+      },
+      "control_after_generate": {
+        "name": "种子控制（运行后）"
+      },
+      "元指令": {
+        "name": "元指令"
+      },
+      "提示词": {
+        "name": "提示词"
+      },
+      "图像输入": {
+        "name": "图像输入"
+      },
+      "视频输入": {
+        "name": "视频输入"
+      },
+      "音频输入": {
+        "name": "音频输入"
+      },
+      "图像作用": {
+        "name": "图像作用"
+      },
+      "画面比例": {
+        "name": "画面比例"
+      },
+      "分辨率": {
+        "name": "分辨率"
+      },
+      "时长（秒）": {
+        "name": "时长（秒）"
+      },
+      "随机种子": {
+        "name": "随机种子"
+      },
+      "温度覆盖": {
+        "name": "温度覆盖"
+      },
+      "种子控制（运行后）": {
+        "name": "种子控制（运行后）"
+      }
+    }
+  },
+  "CreationImage": {
+    "display_name": "创造图像生成",
+    "inputs": {
+      "meta_instruction": {
+        "name": "元指令"
+      },
+      "prompt": {
+        "name": "提示词"
+      },
+      "images": {
+        "name": "参考图"
+      },
+      "videos": {
+        "name": "视频输入"
+      },
+      "audios": {
+        "name": "音频输入"
+      },
+      "image_role_mode": {
+        "name": "图像作用"
+      },
+      "aspect_ratio": {
+        "name": "画面比例"
+      },
+      "resolution": {
+        "name": "分辨率"
+      },
+      "duration": {
+        "name": "时长（秒）"
+      },
+      "seed": {
+        "name": "随机种子"
+      },
+      "temperature": {
+        "name": "温度覆盖"
+      },
+      "control_after_generate": {
+        "name": "种子控制（运行后）"
+      },
+      "元指令": {
+        "name": "元指令"
+      },
+      "提示词": {
+        "name": "提示词"
+      },
+      "参考图": {
+        "name": "参考图"
+      },
+      "视频输入": {
+        "name": "视频输入"
+      },
+      "音频输入": {
+        "name": "音频输入"
+      },
+      "图像作用": {
+        "name": "图像作用"
+      },
+      "画面比例": {
+        "name": "画面比例"
+      },
+      "分辨率": {
+        "name": "分辨率"
+      },
+      "时长（秒）": {
+        "name": "时长（秒）"
+      },
+      "随机种子": {
+        "name": "随机种子"
+      },
+      "温度覆盖": {
+        "name": "温度覆盖"
+      },
+      "种子控制（运行后）": {
+        "name": "种子控制（运行后）"
+      },
+      "并发数量": {
+        "name": "并发数量"
+      }
+    }
+  },
+  "CreationText": {
+    "display_name": "创造文本扩写",
+    "inputs": {
+      "meta_instruction": {
+        "name": "元指令"
+      },
+      "prompt": {
+        "name": "文本内容"
+      },
+      "images": {
+        "name": "图像输入"
+      },
+      "videos": {
+        "name": "视频输入"
+      },
+      "audios": {
+        "name": "音频输入"
+      },
+      "image_role_mode": {
+        "name": "图像作用"
+      },
+      "aspect_ratio": {
+        "name": "画面比例"
+      },
+      "resolution": {
+        "name": "分辨率"
+      },
+      "duration": {
+        "name": "时长（秒）"
+      },
+      "seed": {
+        "name": "随机种子"
+      },
+      "temperature": {
+        "name": "温度覆盖"
+      },
+      "control_after_generate": {
+        "name": "种子控制（运行后）"
+      },
+      "元指令": {
+        "name": "元指令"
+      },
+      "文本内容": {
+        "name": "文本内容"
+      },
+      "图像输入": {
+        "name": "图像输入"
+      },
+      "视频输入": {
+        "name": "视频输入"
+      },
+      "音频输入": {
+        "name": "音频输入"
+      },
+      "图像作用": {
+        "name": "图像作用"
+      },
+      "画面比例": {
+        "name": "画面比例"
+      },
+      "分辨率": {
+        "name": "分辨率"
+      },
+      "时长（秒）": {
+        "name": "时长（秒）"
+      },
+      "随机种子": {
+        "name": "随机种子"
+      },
+      "温度覆盖": {
+        "name": "温度覆盖"
+      },
+      "种子控制（运行后）": {
+        "name": "种子控制（运行后）"
+      }
+    }
+  },
+  "CreationVideo": {
+    "display_name": "创造视频生成",
+    "inputs": {
+      "meta_instruction": {
+        "name": "元指令"
+      },
+      "prompt": {
+        "name": "提示词"
+      },
+      "images": {
+        "name": "图像输入"
+      },
+      "videos": {
+        "name": "视频输入"
+      },
+      "audios": {
+        "name": "音频输入"
+      },
+      "image_role_mode": {
+        "name": "图像作用"
+      },
+      "aspect_ratio": {
+        "name": "画面比例"
+      },
+      "resolution": {
+        "name": "分辨率"
+      },
+      "duration": {
+        "name": "时长（秒）"
+      },
+      "seed": {
+        "name": "随机种子"
+      },
+      "temperature": {
+        "name": "温度覆盖"
+      },
+      "control_after_generate": {
+        "name": "种子控制（运行后）"
+      },
+      "元指令": {
+        "name": "元指令"
+      },
+      "提示词": {
+        "name": "提示词"
+      },
+      "图像输入": {
+        "name": "图像输入"
+      },
+      "视频输入": {
+        "name": "视频输入"
+      },
+      "音频输入": {
+        "name": "音频输入"
+      },
+      "图像作用": {
+        "name": "图像作用"
+      },
+      "画面比例": {
+        "name": "画面比例"
+      },
+      "分辨率": {
+        "name": "分辨率"
+      },
+      "时长（秒）": {
+        "name": "时长（秒）"
+      },
+      "随机种子": {
+        "name": "随机种子"
+      },
+      "温度覆盖": {
+        "name": "温度覆盖"
+      },
+      "种子控制（运行后）": {
+        "name": "种子控制（运行后）"
+      }
+    }
+  }
+}
