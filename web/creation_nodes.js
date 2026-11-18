@@ -21,6 +21,7 @@ const fieldLabels = {
     meta_instruction: "元指令", prompt: "提示词", image_role_mode: "图像作用",
     aspect_ratio: "画面比例", resolution: "分辨率", duration: "时长（秒）",
     seed: "随机种子", temperature: "温度覆盖", control_after_generate: "种子控制（运行后）",
+    custom_width: "自定义宽度", custom_height: "自定义高度", alignment: "对齐倍数",
 };
 const nodeName = node => node.comfyClass || node.constructor?.comfyClass || node.type;
 const inputName = (name, type) => {
@@ -37,6 +38,18 @@ const inputName = (name, type) => {
 };
 function migrateNode(data, type = data?.type) {
     if (!data || !Object.hasOwn(titles, type)) return;
+    const values = data.widgets_values;
+    // Older image workflows put list/seed/concurrency before custom dimensions.
+    // Identify that layout by the boolean and generated seed-control widget;
+    // preserve the array itself, linked-widget nulls and any trailing values.
+    if (type === "CreationImage" && Array.isArray(values) && values.length >= 7
+        && (typeof values[4] === "boolean" || values[4] == null)
+        && Object.hasOwn(seedLabels, values[6])) {
+        const [meta, prompt, ratio, resolution, multiline, seed, control,
+            concurrency = 3, width = 0, height = 0, alignment = 0, ...tail] = values;
+        values.splice(0, values.length, meta, prompt, ratio, resolution,
+            width, height, alignment, seed, control, multiline, concurrency, ...tail);
+    }
     for (const input of data.inputs || []) {
         input.name = inputName(input.name, type);
         if (input.widget) input.widget.name = inputName(input.widget.name, type);

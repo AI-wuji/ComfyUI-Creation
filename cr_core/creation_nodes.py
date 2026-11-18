@@ -247,8 +247,25 @@ async def _image_batch(config, prompts, reference_uris, image_size, seed, concur
     return outputs, downgraded
 
 
-def _image_base_size(aspect_ratio, resolution):
+def _custom_image_size(custom_width=0, custom_height=0, alignment=0):
+    width, height, multiple = (int(value or 0) for value in (custom_width, custom_height, alignment))
+    if min(width, height, multiple) < 0:
+        raise ValueError("自定义宽度、高度和对齐倍数不能为负数。")
+    if not (width or height or multiple):
+        return None
+    width = width or height or 1024
+    height = height or width
+    if multiple:
+        width = (width + multiple - 1) // multiple * multiple
+        height = (height + multiple - 1) // multiple * multiple
+    return f"{width}x{height}"
+
+
+def _image_base_size(aspect_ratio, resolution, custom_width=0, custom_height=0, alignment=0):
     """The p presets use the short edge; automatic defaults to landscape 16:9."""
+    custom = _custom_image_size(custom_width, custom_height, alignment)
+    if custom:
+        return custom
     if resolution not in {"480p", "720p", "1080p"}:
         return nodes._image_size(aspect_ratio, resolution)
     ratio = "16:9" if aspect_ratio in (None, "", "自动") else aspect_ratio
@@ -259,9 +276,43 @@ def _image_base_size(aspect_ratio, resolution):
     return f"{short_edge}x{round(short_edge * height_ratio / width_ratio)}"
 
 
-def _image_request_size(config, aspect_ratio, resolution):
+def _fit_custom_image_size(width, height, alignment):
+    """Project onto the model's valid grid, retaining user divisibility as well."""
+    step = math.lcm(16, int(alignment or 1))
+    min_pixels, max_pixels, max_edge = 655360, 8294400, 3840
+    aligned_width = (width + step - 1) // step * step
+    aligned_height = (height + step - 1) // step * step
+    if (max(aligned_width, aligned_height) <= max_edge
+            and min_pixels <= aligned_width * aligned_height <= max_pixels
+            and max(aligned_width, aligned_height) <= 3 * min(aligned_width, aligned_height)):
+        return f"{aligned_width}x{aligned_height}"
+
+    # Search at most 240 widths. Each width has a contiguous valid height range;
+    # the nearest height minimizes log-size error, so two candidates suffice.
+    best = None
+    for candidate_width in range(step, max_edge + 1, step):
+        lower = max((min_pixels + candidate_width - 1) // candidate_width,
+                    (candidate_width + 2) // 3, step)
+        upper = min(max_pixels // candidate_width, candidate_width * 3, max_edge)
+        lower = (lower + step - 1) // step * step
+        upper = upper // step * step
+        if lower > upper:
+            continue
+        for candidate_height in {max(lower, min(upper, height // step * step)),
+                                 max(lower, min(upper, (height + step - 1) // step * step))}:
+            error = (math.log(candidate_width / width) ** 2
+                     + math.log(candidate_height / height) ** 2)
+            candidate = (error, candidate_width, candidate_height)
+            if best is None or candidate < best:
+                best = candidate
+    if best is None:
+        raise ValueError(f"对齐倍数 {alignment} 与此模型的尺寸限制无法同时满足；请减小对齐倍数或设为 0。")
+    return f"{best[1]}x{best[2]}"
+
+
+def _image_request_size(config, aspect_ratio, resolution, custom_width=0, custom_height=0, alignment=0):
     """Fit GPT Image 2.5 sizes before submission; other models keep their presets."""
-    size = _image_base_size(aspect_ratio, resolution)
+    size = _image_base_size(aspect_ratio, resolution, custom_width, custom_height, alignment)
     model = (config.get("remote") or {}).get("image") or config.get("image_model") or ""
     if model not in {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} or not size:
         return size
@@ -269,6 +320,8 @@ def _image_request_size(config, aspect_ratio, resolution):
     # Official Image API constraints: 16px steps, <=3840px per edge,
     # 655,360..8,294,400 pixels, and at most 3:1 in either orientation.
     width, height = map(int, size.split("x"))
+    if custom_width or custom_height or alignment:
+        return _fit_custom_image_size(width, height, alignment)
     if max(width, height) > 3 * min(width, height):
         raise ValueError("此图像模型的长短边比例不能超过 3:1，请调整画面比例。")
     min_pixels, max_pixels = 655360, 8294400
@@ -291,6 +344,7 @@ def _accept_chinese_inputs(method):
         "音频输入": "audios", "图像作用": "image_role_mode",
         "画面比例": "aspect_ratio", "分辨率": "resolution", "时长（秒）": "duration",
         "随机种子": "seed", "温度覆盖": "temperature",
+        "自定义宽度": "custom_width", "自定义高度": "custom_height", "对齐倍数": "alignment",
     }
 
     @wraps(method)
@@ -390,10 +444,18 @@ class CreationImage(io.ComfyNode):
                 io.String.Input("提示词", display_name="提示词", multiline=True, default="", optional=True),
                 io.Autogrow.Input("参考图", display_name="参考图", optional=True,
                     template=io.Autogrow.TemplatePrefix(input=io.Image.Input("参考图"), prefix="参考图_", min=0, max=16)),
-                io.Combo.Input("画面比例", display_name="画面比例", options=["自动", "1:1", "16:9", "9:16", "4:3", "3:4", "21:9"], default="自动", optional=True),
-                io.Combo.Input("分辨率", display_name="分辨率", options=["480p", "720p", "1080p", "1K", "2K", "4K"], default="1K", optional=True),
-                io.Boolean.Input("多行列表", default=False, optional=True, label_on="开启", label_off="关闭"),
+                io.Combo.Input("画面比例", display_name="画面比例", options=["自动", "1:1", "16:9", "9:16", "4:3", "3:4", "21:9"], default="自动", optional=True,
+                    tooltip="自定义宽度、高度、对齐倍数任一非零时，本项不参与尺寸计算。"),
+                io.Combo.Input("分辨率", display_name="分辨率", options=["480p", "720p", "1080p", "1K", "2K", "4K"], default="1K", optional=True,
+                    tooltip="自定义宽度、高度、对齐倍数任一非零时，本项不参与尺寸计算。"),
+                io.Int.Input("自定义宽度", default=0, min=0, max=65536, step=1, optional=True,
+                    tooltip="像素。三项均为 0 时沿用原比例和分辨率；任一非零则启用自定义。仅填一边时补成方图。"),
+                io.Int.Input("自定义高度", default=0, min=0, max=65536, step=1, optional=True,
+                    tooltip="像素。自定义启用后忽略画面比例和分辨率预设；仅填一边时补成方图。"),
+                io.Int.Input("对齐倍数", default=0, min=0, max=65536, step=1, optional=True,
+                    tooltip="非零时宽高向上取整到该数的倍数；0 不增加对齐，仍保留模型原有尺寸要求。仅填本项时从 1024×1024 开始。"),
                 io.Int.Input("随机种子", display_name="随机种子", default=1, min=1, max=2147483647, control_after_generate=True, optional=True),
+                io.Boolean.Input("多行列表", default=False, optional=True, label_on="开启", label_off="关闭"),
                 io.Int.Input("并发数量", default=3, min=1, max=8, optional=True),
             ],
             outputs=[io.String.Output(display_name="文本"), io.Image.Output(display_name="图像"), io.String.Output(display_name="信息")],
@@ -402,7 +464,8 @@ class CreationImage(io.ComfyNode):
     @classmethod
     @_accept_chinese_inputs
     async def execute(cls, 动力源=None, meta_instruction="", prompt="", images=None,
-                      aspect_ratio="自动", resolution="1K", 多行列表=False, seed=0, 并发数量=3):
+                      aspect_ratio="自动", resolution="1K", 多行列表=False, seed=0, 并发数量=3,
+                      custom_width=0, custom_height=0, alignment=0):
         config = _task_config(_config(动力源))
         seed = max(1, int(seed or config.get("seed", 1)))
         if not config.get("text_enabled"):
@@ -410,8 +473,9 @@ class CreationImage(io.ComfyNode):
         if not config.get("image_enabled"):
             raise ValueError("创造API尚未选择图像模型。")
         ratio = "" if aspect_ratio in (None, "", "自动") else str(aspect_ratio)
-        requested_size = _image_base_size(ratio, resolution)
-        image_size = _image_request_size(config, ratio, resolution)
+        custom_size = _custom_image_size(custom_width, custom_height, alignment)
+        requested_size = _image_base_size(ratio, resolution, custom_width, custom_height, alignment)
+        image_size = _image_request_size(config, ratio, resolution, custom_width, custom_height, alignment)
         reference_uris = []
         for tensor in nodes._sorted_slots(images):
             reference_uris.extend(media.image_tensor_to_data_uris(
@@ -432,7 +496,12 @@ class CreationImage(io.ComfyNode):
         info = "\n\n".join(f"图像提示词 {index}:\n{value}" for index, value in enumerate(prompts, 1))
         if extra_text:
             info += f"\n\n额外文本：\n{extra_text}"
-        info += f"\n\n图像提交尺寸：{image_size}（分辨率档位：{resolution}）"
+        if custom_size:
+            info += (f"\n\n自定义尺寸输入：宽 {custom_width}，高 {custom_height}，对齐倍数 {alignment}"
+                     f"；补全及自定义对齐后：{custom_size}；画面比例和分辨率预设已忽略。"
+                     f"\n图像提交尺寸：{image_size}")
+        else:
+            info += f"\n\n图像提交尺寸：{image_size}（分辨率档位：{resolution}）"
         if image_size != requested_size:
             info += "；已按所选模型的边长、总像素和尺寸步长限制调整。"
         if downgraded:

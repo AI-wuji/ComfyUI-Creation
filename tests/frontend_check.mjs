@@ -15,7 +15,8 @@ const labels = {
     images: '图像输入', videos: '视频输入', audios: '音频输入',
 };
 const models = ['API文本视觉模型', 'API图像模型', 'API视频模型'];
-const fieldsFor = type => ({...labels, prompt: type === 'CreationText' ? '文本内容' : '提示词', images: type === 'CreationImage' ? '参考图' : '图像输入'});
+const fieldsFor = type => ({...labels, prompt: type === 'CreationText' ? '文本内容' : '提示词', images: type === 'CreationImage' ? '参考图' : '图像输入',
+    ...(type === 'CreationImage' ? {custom_width: '自定义宽度', custom_height: '自定义高度', alignment: '对齐倍数'} : {})});
 const plain = value => JSON.parse(JSON.stringify(value));
 
 function harness() {
@@ -299,6 +300,29 @@ test('configure wrapper migrates before base configure consumes workflow data', 
             assert.equal(node.title, titles[type]);
         }
     }
+});
+
+test('image layout migration keeps dimensions, seed control, list and concurrency with their fields', async () => {
+    const {extension} = harness();
+    const Node = nodeClass('CreationImage');
+    await extension.beforeRegisterNodeDef(Node, {name: 'CreationImage'});
+    for (const [custom, multiline] of [[[], false], [[750, 1624, 0], true], [[null, 1624, 8], null]]) {
+        const values = ['元指令', '提示词', '9:16', '1080p', multiline, 1418858719, 'randomize', 1, ...custom];
+        const data = {type: 'CreationImage', inputs: [], widgets_values: values};
+        extension.beforeConfigureGraph({nodes: [data]});
+        const expected = ['元指令', '提示词', '9:16', '1080p', ...(custom.length ? custom : [0, 0, 0]), 1418858719, 'randomize', multiline, 1];
+        assert.deepEqual(values, expected);
+        assert.equal(data.widgets_values, values);
+        const {node} = construct(Node, extension, 'CreationImage');
+        node.configure(data); // Both migration hooks can run for the same workflow.
+        assert.deepEqual(node.configuredSnapshot.widgets_values, expected);
+        extension.beforeConfigureGraph({nodes: [data]});
+        assert.deepEqual(values, expected);
+    }
+    const objectValues = {自定义宽度: 750, 自定义高度: 1624, 对齐倍数: 0, 多行列表: false, 随机种子: 42, 并发数量: 1};
+    const data = {type: 'CreationImage', widgets_values: {...objectValues}};
+    extension.beforeConfigureGraph({nodes: [data]});
+    assert.deepEqual(data.widgets_values, objectValues);
 });
 
 test('default/old titles use 创造 and custom titles survive every hook', async () => {

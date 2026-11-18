@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-creation"
-version = "1.0.4"
+version = "1.0.6"
 description = "创造 ComfyUI 插件：API、文本扩写、图像生成和视频生成。"
 authors = [{ name = "Wuji" }]
 readme = "README.md"

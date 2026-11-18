@@ -52,6 +52,11 @@ class CreationChecks(unittest.TestCase):
         self.assertFalse(fields['多行列表'].default)
         self.assertEqual(fields['并发数量'].default, 3)
         self.assertEqual((fields['并发数量'].min, fields['并发数量'].max), (1, 8))
+        self.assertEqual(list(fields)[-7:], ['分辨率', '自定义宽度', '自定义高度', '对齐倍数', '随机种子', '多行列表', '并发数量'])
+        for name in ['自定义宽度', '自定义高度', '对齐倍数']:
+            self.assertEqual(fields[name].default, 0)
+            self.assertEqual(fields[name].min, 0)
+            self.assertTrue(fields[name].optional)
 
     def test_chinese_contract_in_v3_and_v1_without_frontend_translation(self):
         for cls in run(plugin.CreationExtension().get_node_list()):
@@ -95,6 +100,10 @@ class CreationChecks(unittest.TestCase):
             output = run(nodes.CreationImage.execute(动力源=config, 元指令='画一幅画并写诗', 提示词='雨', 参考图={}, 画面比例='16:9', 分辨率='2K', 多行列表=False, 随机种子=42))
             self.assertEqual(output.result[0], '诗')
             self.assertEqual(generate.call_args.kwargs['size'], '2048x1152')
+            run(nodes.CreationImage.execute(动力源=config, 提示词='雨', 自定义宽度=1001, 自定义高度=701, 对齐倍数=8))
+            self.assertEqual(generate.call_args.kwargs['size'], '1008x704')
+            run(nodes.CreationImage.execute(动力源=config, prompt='雨', custom_width=1001, custom_height=701, alignment=0))
+            self.assertEqual(generate.call_args.kwargs['size'], '1001x701')
         with patch.object(client, 'chat', return_value='最终镜头'), \
              patch.object(client, 'generate_video', return_value={'data': []}) as generate, \
              patch.object(client, 'poll_media', new=AsyncMock(return_value={'data': []})), \
@@ -142,7 +151,7 @@ class CreationChecks(unittest.TestCase):
         self.assertEqual(bodies[3]['temperature'], 0.2)
 
     def image_run(self, multiline, seed=42, reference=False, image_model='image-model',
-                  aspect_ratio='自动', resolution='1K'):
+                  aspect_ratio='自动', resolution='1K', custom_width=0, custom_height=0, alignment=0, concurrency=3):
         buffer = io.BytesIO()
         Image.new('RGB', (12, 8), 'red').save(buffer, format='PNG')
         encoded = base64.b64encode(buffer.getvalue()).decode('ascii')
@@ -158,8 +167,140 @@ class CreationChecks(unittest.TestCase):
         refs = {'参考图_0': object()} if reference else None
         with patch.object(client, '_request', side_effect=request), patch.object(nodes.media, 'image_tensor_to_data_uris', return_value=['data:image/png;base64,' + encoded]):
             output = run(nodes.CreationImage.execute(动力源=config, prompt='分镜', 多行列表=multiline,
-                seed=seed, images=refs, aspect_ratio=aspect_ratio, resolution=resolution))
+                seed=seed, images=refs, aspect_ratio=aspect_ratio, resolution=resolution,
+                custom_width=custom_width, custom_height=custom_height, alignment=alignment, 并发数量=concurrency))
         return output, calls
+
+    def test_custom_size_activation_missing_dimensions_and_optional_alignment(self):
+        cases = [
+            ((0, 0, 0), None), ((1001, 701, 0), '1001x701'),
+            ((1001, 701, 8), '1008x704'), ((1001, 701, 1), '1001x701'),
+            ((1001, 0, 0), '1001x1001'), ((0, 701, 0), '701x701'),
+            ((0, 0, 3), '1026x1026'), ((0, 0, 64), '1024x1024'),
+            ((1001, 0, 64), '1024x1024'), ((0, 701, 64), '704x704'),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(nodes._custom_image_size(*values), expected)
+                if expected:
+                    # Custom inputs must never read either preset, even invalid ones.
+                    self.assertEqual(nodes._image_base_size('ignored', 'ignored', *values), expected)
+                    self.assertEqual(nodes._image_request_size({}, 'ignored', 'ignored', *values), expected)
+
+    def test_custom_zero_preserves_every_original_preset_and_model_alignment(self):
+        for model in ('image-model', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'):
+            for ratio in ('自动', '1:1', '16:9', '9:16', '4:3', '3:4', '21:9'):
+                for resolution in ('480p', '720p', '1080p', '1K', '2K', '4K'):
+                    with self.subTest(model=model, ratio=ratio, resolution=resolution):
+                        config = {'image_model': model}
+                        self.assertEqual(nodes._image_request_size(config, ratio, resolution, 0, 0, 0),
+                                         nodes._image_request_size(config, ratio, resolution))
+        config = {'image_model': 'gpt-image-2.5-flare'}
+        # Zero user alignment still applies the model's mandatory 16px grid.
+        size = nodes._image_request_size(config, '自动', '1K', 1001, 701, 0)
+        self.assertNotEqual(size, '1001x701')
+        self.assertTrue(all(int(part) % 16 == 0 for part in size.split('x')))
+
+    def test_custom_model_limits_and_user_divisibility_hold_together(self):
+        for model in ('gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'):
+            for width, height in ((1001, 701), (1, 1), (65536, 65536), (65536, 1), (1, 65536), (3840, 2160)):
+                for alignment in (0, 3, 7, 16, 64, 128, 1000, 2048):
+                    with self.subTest(model=model, width=width, height=height, alignment=alignment):
+                        size = nodes._image_request_size({'image_model': model}, 'ignored', 'ignored', width, height, alignment)
+                        actual_width, actual_height = map(int, size.split('x'))
+                        for edge in (actual_width, actual_height):
+                            self.assertEqual(edge % 16, 0)
+                            self.assertEqual(edge % (alignment or 1), 0)
+                            self.assertLessEqual(edge, 3840)
+                        self.assertGreaterEqual(actual_width * actual_height, 655360)
+                        self.assertLessEqual(actual_width * actual_height, 8294400)
+                        self.assertLessEqual(max(actual_width, actual_height), 3 * min(actual_width, actual_height))
+        config = {'image_model': 'other', 'remote': {'image': 'gpt-image-2.5-flare'}}
+        self.assertEqual(nodes._image_request_size(config, 'ignored', 'ignored', 1080, 720, 3), '1104x720')
+        self.assertEqual(nodes._image_request_size(config, 'ignored', 'ignored', 1010, 720, 3), '1056x720')
+        config['remote']['image'] = 'other'
+        self.assertEqual(nodes._image_request_size(config, 'ignored', 'ignored', 1080, 720, 3), '1080x720')
+
+    def test_custom_impossible_alignment_is_explained_before_any_remote_request(self):
+        config = run(nodes.CreationAPI.execute(API文本视觉模型='gpt-4o', API图像模型='gpt-image-2.5-flare'))[0]
+        with patch.object(client, '_request') as request:
+            for alignment in (3840, 4096, 2049):
+                with self.subTest(alignment=alignment), self.assertRaisesRegex(ValueError, '对齐倍数.*无法同时满足'):
+                    run(nodes.CreationImage.execute(动力源=config, 对齐倍数=alignment))
+            request.assert_not_called()
+
+    def test_custom_real_requests_preserve_list_edit_seeds_and_extra_text(self):
+        for model in ('image-model', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'):
+            for reference in (False, True):
+                for multiline in (False, True):
+                    for resolution in ('480p', '720p', '1080p', '1K', '2K', '4K'):
+                        with self.subTest(model=model, reference=reference, multiline=multiline, resolution=resolution):
+                            output, calls = self.image_run(multiline, reference=reference, image_model=model,
+                                aspect_ratio='9:16', resolution=resolution, custom_width=1080, custom_height=720, alignment=3)
+                            posts = [call for call in calls if call[0] == 'POST' and '/images/' in call[1]]
+                            expected = '1080x720' if model == 'image-model' else '1104x720'
+                            count = 2 if multiline else 1
+                            self.assertEqual(len(posts), count)
+                            for _, url, body in posts:
+                                self.assertTrue(url.endswith('/images/edit-tasks' if reference else '/images/tasks'))
+                                self.assertEqual(body['size'], expected)
+                                self.assertNotIn('独立诗句', body['prompt'])
+                            self.assertEqual(posts[0][2]['seed'], 42)
+                            if multiline:
+                                self.assertEqual([item[2]['prompt'] for item in posts], ['第一幅', '第二幅'])
+                                self.assertEqual(posts[1][2]['seed'], nodes._derived_seed(42, 'image-item-1'))
+                            self.assertEqual(output.result[0], '独立诗句')
+                            self.assertEqual(tuple(output.result[1].shape), (count, 8, 12, 3))
+                            self.assertIn('预设已忽略', output.result[2])
+                            self.assertIn(expected, output.result[2])
+
+    def test_custom_node_execution_obeys_concurrency_and_falls_back_without_duplicate_images(self):
+        import threading
+        import time
+        config = run(nodes.CreationAPI.execute(API文本视觉模型='gpt-4o', API图像模型='image'))[0]
+        for concurrency, reject, reference in [(1, False, False), (2, False, True), (3, False, False), (3, True, True)]:
+            state = {'active': 0, 'maximum': 0, 'calls': {}, 'sizes': [], 'seeds': {}}
+            lock = threading.Lock()
+            barrier = threading.Barrier(concurrency)
+
+            def submit(config, prompt, **kwargs):
+                with lock:
+                    state['active'] += 1
+                    state['maximum'] = max(state['maximum'], state['active'])
+                    state['calls'][prompt] = state['calls'].get(prompt, 0) + 1
+                    attempt = state['calls'][prompt]
+                    state['sizes'].append(kwargs['size'])
+                    state['seeds'].setdefault(prompt, []).append(kwargs['extra']['seed'])
+                if prompt in 'ABCDE'[:concurrency] and attempt == 1:
+                    barrier.wait(timeout=5)
+                time.sleep(0.01)
+                with lock:
+                    state['active'] -= 1
+                self.assertEqual(kwargs['images'], ['reference-uri'] if reference else [])
+                if reject and prompt == 'B' and attempt == 1:
+                    raise client.WujiApiError('concurrency limit', status_code=429, concurrency_hint=True)
+                return {'prompt': prompt}
+
+            async def decode(payload, **kwargs):
+                return payload['prompt']
+
+            with self.subTest(concurrency=concurrency, reject=reject, reference=reference), \
+                 patch.object(client, 'chat', return_value=json.dumps({'image_prompts': list('ABCDE'), 'text_output': '诗'})), \
+                 patch.object(client, 'generate_image', side_effect=submit), \
+                 patch.object(client, 'poll_media', new=AsyncMock(side_effect=lambda c, p, k: p)), \
+                 patch.object(nodes.media, 'images_from_payload', new=AsyncMock(side_effect=decode)), \
+                 patch.object(nodes.media, 'image_tensor_to_data_uris', return_value=['reference-uri']), \
+                 patch.object(nodes.media, '_pad_and_stack', side_effect=lambda values: values):
+                output = run(nodes.CreationImage.execute(动力源=config, 多行列表=True, 并发数量=concurrency,
+                    自定义宽度=1001, 自定义高度=701, 对齐倍数=8, 随机种子=42,
+                    参考图={'参考图_0': object()} if reference else None))
+                self.assertEqual(output.result[:2], ('诗', list('ABCDE')))
+                self.assertEqual(state['maximum'], concurrency)
+                self.assertEqual(set(state['sizes']), {'1008x704'})
+                self.assertEqual(state['calls'], {key: 2 if reject and key == 'B' else 1 for key in 'ABCDE'})
+                for index, prompt in enumerate('ABCDE'):
+                    self.assertEqual(set(state['seeds'][prompt]), {42 if index == 0 else nodes._derived_seed(42, f'image-item-{index}')})
+                self.assertEqual('已改为串行' in output.result[2], reject)
 
     def test_image_async_batch_extra_text_and_independent_seeds(self):
         output, calls = self.image_run(True)
